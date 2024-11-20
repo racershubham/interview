@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interview Application</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; }
+        .section { margin-bottom: 20px; }
+        .btn { padding: 8px 16px; background-color: #28a745; color: #fff; border: none; cursor: pointer; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h2>AI Interview Application</h2>
+
+    <!-- Interview Creation Section -->
+    <div class="section">
+        <h3>Create Interview</h3>
+        <form id="createForm">
+            <label for="job_description">Job Description:</label>
+            <textarea id="job_description" rows="3" required></textarea>
+            <br><br>
+            <label for="file_input">Upload Job Description (PDF or Word):</label>
+            <input type="file" id="file_input" accept=".pdf,.docx">
+            <br><br>
+            <button type="submit" class="btn">Create Interview</button>
+        </form>
+        <p id="createResult"></p>
+    </div>
+
+    <!-- Display Interview ID and Password -->
+    <div class="section" id="interviewDetails" style="display: none;">
+        <h3>Interview Details</h3>
+        <p><strong>Interview ID:</strong> <span id="interviewId"></span></p>
+        <p><strong>Password:</strong> <span id="password"></span></p>
+    </div>
+</div>
+
+<script>
+    const apiBaseUrl = 'http://127.0.0.1:5000';
+
+    // Helper function to toggle button state
+    function toggleButton(button, state) {
+        button.disabled = !state;
+    }
+
+    // Handle file upload and extract text for PDF or Word files
+    document.getElementById('file_input').addEventListener('change', async function (event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        if (fileExtension === 'pdf') {
+            await extractTextFromPDF(file);
+        } else if (fileExtension === 'docx') {
+            await extractTextFromWord(file);
+        } else {
+            alert('Please upload a PDF or Word (.docx) file.');
+        }
+    });
+
+    // Extract text from PDF using pdf.js
+    async function extractTextFromPDF(file) {
+        const fileReader = new FileReader();
+        fileReader.onload = async function () {
+            const typedArray = new Uint8Array(this.result);
+            const pdf = await pdfjsLib.getDocument(typedArray).promise;
+            let textContent = '';
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const text = await page.getTextContent();
+                text.items.forEach(item => {
+                    textContent += item.str + ' ';
+                });
+            }
+            
+            document.getElementById('job_description').value = textContent.trim();
+        };
+        fileReader.readAsArrayBuffer(file);
+    }
+
+    // Extract text from Word document using mammoth.js
+    async function extractTextFromWord(file) {
+        const fileReader = new FileReader();
+        fileReader.onload = function (event) {
+            const arrayBuffer = event.target.result;
+            mammoth.extractRawText({ arrayBuffer: arrayBuffer })
+                .then(function (result) {
+                    document.getElementById('job_description').value = result.value.trim();
+                })
+                .catch(function (err) {
+                    alert('Error reading Word document: ' + err.message);
+                });
+        };
+        fileReader.readAsArrayBuffer(file);
+    }
+
+    // Create Interview
+    document.getElementById('createForm').onsubmit = async function (e) {
+        e.preventDefault();
+        const jobDescription = document.getElementById('job_description').value;
+        const createButton = e.target.querySelector('button');
+
+        toggleButton(createButton, false);
+        try {
+            const response = await fetch(`${apiBaseUrl}/create_interview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ job_description: jobDescription })
+            });
+
+            const result = await response.json();
+            if (response.ok) {
+                // Display the Interview ID and Password
+                document.getElementById('interviewId').textContent = result.interview_id;
+                document.getElementById('password').textContent = result.password;
+                document.getElementById('interviewDetails').style.display = 'block';
+
+                document.getElementById('createResult').textContent = "Interview created successfully!";
+                document.getElementById('job_description').value = ''; // Clear input
+            } else {
+                document.getElementById('createResult').textContent = result.error || "Error creating interview";
+            }
+        } catch (error) {
+            document.getElementById('createResult').textContent = "Network error: Unable to create interview";
+        } finally {
+            toggleButton(createButton, true);
+        }
+    };
+</script>
+
+</body>
+</html>

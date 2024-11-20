@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Start Interview with Voice</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; }
+        .section { margin-bottom: 20px; }
+        .btn { padding: 8px 16px; background-color: #28a745; color: #fff; border: none; cursor: pointer; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        .transcript { margin-top: 10px; color: #333; font-size: 1em; font-style: italic; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; min-height: 50px; }
+        .recording { color: red; font-weight: bold; }
+        #timer { font-size: 1.2em; color: #ff0000; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Start Interview with Voice</h2>
+
+    <div class="section">
+        <h3>Enter Interview ID and Password</h3>
+        <form id="startForm">
+            <label for="interview_id">Interview ID:</label>
+            <input type="text" id="interview_id" required>
+            <label for="password">Password:</label>
+            <input type="password" id="password" required>
+            <button type="submit" class="btn">Start Interview</button>
+        </form>
+        <p id="startResult"></p>
+    </div>
+
+    <!-- Questions and Answers Section -->
+    <div class="section" id="qaSection" style="display: none;">
+        <h3>Question <span id="questionNumber">1</span> of 15</h3>
+        <p id="questionText"></p>
+        <button id="recordAnswerBtn" class="btn">Start Recording Answer</button>
+        <p id="recordingStatus" class="recording" style="display: none;">Recording...</p>
+        <p id="timer" style="display: none;">Time Left: 02:00</p>
+        <button id="stopRecordingBtn" class="btn" style="display: none;">Stop Recording</button>
+        <button id="listenAgainBtn" class="btn" style="display: inline-block;">Listen to Question Again</button>
+        <p class="transcript" id="transcript"></p>
+        <button id="submitAnswerBtn" class="btn" style="display: none;">Submit Answer</button>
+        <button id="skipQuestionBtn" class="btn" style="display: none;">Skip to Next Question</button>
+    </div>
+</div>
+
+<script>
+const apiBaseUrl = 'http://127.0.0.1:5000';
+let currentQuestionIndex = 0;
+let questions = [];
+let speechRecognition;
+let isRecording = false;
+let transcriptFull = "";
+let timerInterval;
+let timeLeft = 120; // 2 minutes in seconds
+
+// Initialize speech synthesis for speaking questions
+const synth = window.speechSynthesis;
+
+// Start Interview Form
+document.getElementById('startForm').onsubmit = async function (e) {
+    e.preventDefault();
+    const interviewId = document.getElementById('interview_id').value;
+    const password = document.getElementById('password').value;
+    const startButton = e.target.querySelector('button');
+
+    toggleButton(startButton, false);
+    try {
+        const response = await fetch(`${apiBaseUrl}/start_interview`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ interview_id: interviewId, password: password })
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            document.getElementById('startResult').textContent = "Interview started successfully!";
+            questions = result.questions;
+
+            showQuestion(currentQuestionIndex);
+            document.getElementById('qaSection').style.display = 'block';
+        } else {
+            document.getElementById('startResult').textContent = result.error || "Error starting interview";
+        }
+    } catch (error) {
+        document.getElementById('startResult').textContent = "Network error: Unable to start interview";
+    } finally {
+        toggleButton(startButton, true);
+    }
+};
+
+// Function to display the question and speak it
+function showQuestion(index) {
+    document.getElementById('questionNumber').textContent = index + 1;
+    const questionText = questions[index];
+    document.getElementById('questionText').textContent = questionText;
+    speakQuestion(questionText);
+    resetTimer(); // Reset and start the timer for each new question
+}
+
+// Function to use speech synthesis to speak the question
+function speakQuestion(text) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US'; // Adjust language if needed
+    synth.speak(utterance);
+}
+
+// Set up speech recognition for recording answers
+if ('webkitSpeechRecognition' in window) {
+    speechRecognition = new webkitSpeechRecognition();
+    speechRecognition.continuous = true; // Allow for continuous recording
+    speechRecognition.interimResults = true; // Show partial results
+    speechRecognition.lang = 'en-US'; // Adjust language if needed
+
+    // Accumulate transcripts as results come in
+    speechRecognition.onresult = function (event) {
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+                transcriptFull += event.results[i][0].transcript + ' ';
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
+        document.getElementById('transcript').textContent = `Transcript: ${transcriptFull} ${interimTranscript}`;
+    };
+
+    speechRecognition.onerror = function (event) {
+        alert('Error occurred in speech recognition: ' + event.error);
+    };
+
+    speechRecognition.onend = function () {
+        stopRecording();
+    };
+} else {
+    alert('Your browser does not support speech recognition.');
+}
+
+// Start recording
+document.getElementById('recordAnswerBtn').onclick = function () {
+    if (!isRecording) {
+        transcriptFull = ''; // Reset the full transcript
+        document.getElementById('transcript').textContent = ''; // Clear the displayed transcript
+        document.getElementById('recordingStatus').style.display = 'block';
+        document.getElementById('timer').style.display = 'inline-block';
+        document.getElementById('recordAnswerBtn').style.display = 'none';
+        document.getElementById('stopRecordingBtn').style.display = 'inline-block';
+        document.getElementById('listenAgainBtn').style.display = 'none'; // Hide the listen button during recording
+        document.getElementById('submitAnswerBtn').style.display = 'none'; // Hide the submit answer button during recording
+        document.getElementById('skipQuestionBtn').style.display = 'none'; // Hide skip button during recording
+        isRecording = true;
+        startTimer(); // Start the 2-minute countdown
+        speechRecognition.start();
+    }
+};
+
+// Start the countdown timer
+function startTimer() {
+    // Clear any previous intervals to prevent multiple intervals from stacking
+    if (timerInterval) {
+        clearInterval(timerInterval);
+    }
+
+    timerInterval = setInterval(function () {
+        timeLeft--;
+        let minutes = Math.floor(timeLeft / 60);
+        let seconds = timeLeft % 60;
+        document.getElementById('timer').textContent = `Time Left: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+        if (timeLeft <= 0) {
+            clearInterval(timerInterval);
+            stopRecording(); // Automatically stop recording when the time is up
+        }
+    }, 1000);
+}
+
+// Reset and start the timer for a new question
+function resetTimer() {
+    // Reset the time left
+    timeLeft = 120; // Reset to 2 minutes
+    startTimer(); // Start the timer
+}
+
+// Stop recording
+document.getElementById('stopRecordingBtn').onclick = function () {
+    clearInterval(timerInterval); // Stop the countdown timer
+    stopRecording();
+};
+
+// Function to stop recording and submit the answer
+function stopRecording() {
+    speechRecognition.stop();
+    document.getElementById('recordingStatus').style.display = 'none';
+    document.getElementById('timer').style.display = 'none';
+    document.getElementById('recordAnswerBtn').style.display = 'inline-block';
+    document.getElementById('stopRecordingBtn').style.display = 'none';
+    document.getElementById('listenAgainBtn').style.display = 'inline-block';
+    document.getElementById('submitAnswerBtn').style.display = 'inline-block'; // Show submit answer button
+    document.getElementById('skipQuestionBtn').style.display = 'inline-block'; // Show skip button
+    isRecording = false;
+    submitAnswer(); // Automatically submit the answer after recording stops
+}
+
+// Submit Answer
+document.getElementById('submitAnswerBtn').onclick = function () {
+    submitAnswer();
+};
+
+// Submit answer and go to the next question
+function submitAnswer() {
+    const answer = transcriptFull;
+    if (answer.trim() === '') {
+        alert('Please record or type your answer before submitting.');
+        return;
+    }
+
+    // Send the answer to the server
+    fetch(`${apiBaseUrl}/submit_answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_index: currentQuestionIndex, answer: answer })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.message === 'Answer recorded') {
+            // Clear the transcript and disable further recording for the current question
+            transcriptFull = '';
+            document.getElementById('transcript').textContent = '';
+
+            // Hide the "Submit Answer" button after submission
+            document.getElementById('submitAnswerBtn').style.display = 'none';
+
+            // Automatically move to the next question
+            currentQuestionIndex++;
+            if (currentQuestionIndex < questions.length) {
+                showQuestion(currentQuestionIndex);
+            } else {
+                document.getElementById('startResult').textContent = "Interview completed. All questions answered.";
+                document.getElementById('qaSection').style.display = 'none';
+            }
+        } else {
+            document.getElementById('startResult').textContent = result.error || "Error submitting answer";
+        }
+    })
+    .catch(error => {
+        document.getElementById('startResult').textContent = "Error submitting answer.";
+    });
+}
+
+// Skip to the next question
+document.getElementById('skipQuestionBtn').onclick = function () {
+    currentQuestionIndex++;
+    transcriptFull = ''; // Clear transcript for the next question
+    if (currentQuestionIndex < questions.length) {
+        showQuestion(currentQuestionIndex);
+    } else {
+        document.getElementById('startResult').textContent = "Interview completed. All questions answered.";
+        document.getElementById('qaSection').style.display = 'none';
+    }
+};
+
+// Listen to the question again
+document.getElementById('listenAgainBtn').onclick = function () {
+    const questionText = questions[currentQuestionIndex];
+    speakQuestion(questionText);
+};
+
+// Helper function to toggle button state
+function toggleButton(button, state) {
+    button.disabled = !state;
+}
+
+</script>
+
+
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interview Application</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; }
+        .section { margin-bottom: 20px; }
+        .btn { padding: 8px 16px; background-color: #28a745; color: #fff; border: none; cursor: pointer; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>AI Interview Application</h2>
+
+    <!-- Interview Creation Section -->
+    <div class="section">
+        <h3>Create Interview</h3>
+        <form id="createForm" action="http://127.0.0.1:5000/create_interview" method="POST">
+            <label for="job_description">Job Description:</label>
+            <textarea id="job_description" name="job_description" rows="3" required></textarea>
+            <button type="submit" class="btn">Create Interview</button>
+        </form>
+    </div>
+</div>
+
+</body>
+</html>
